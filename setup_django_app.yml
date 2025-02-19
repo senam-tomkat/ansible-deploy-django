@@ -1,0 +1,111 @@
+---
+- name: Deploy Django web app to EC2
+  hosts: ubuntu_hosts_group
+  become: yes
+  vars:
+    project_name: 'example_project_name' -- change the project name
+    virtualenv_name: "{{ project_name }}-venv"
+    repo_url: '<git_repo_url>'	-- Add your repo url
+    home_dir: '/home/{{ ansible_user }}'
+    webapps_dir: "{{ home_dir }}/webapps"
+    virtualenv_path: "{{ webapps_dir }}/{{ virtualenv_name }}"
+    project_path: "{{ webapps_dir }}/{{ project_name }}"
+
+    # uWSGI will listen on a Unix socket or HTTP
+    uwsgi_socket: "127.0.0.1:8000"
+    protocol: http
+    uwsgi_ini: "{{ project_path }}/uwsgi.ini"
+
+    # Supervisor configuration file path:
+    supervisor_conf: "/etc/supervisor/conf.d/{{ project_name }}.conf"
+
+    # Environment variables for Django app
+    env_vars:
+      DJANGO_SETTINGS_MODULE: "{{ project_name }}.settings"
+      SECRET_KEY: "CHANGE_ME"  # Change this in production!
+      DEBUG: "False"
+
+    # Nginx configuration file
+    nginx_conf_path: "/etc/nginx/sites-available/{{ project_name }}.conf"
+
+  tasks:
+    - name: Update apt cache and install required packages
+      apt:
+        update_cache: yes
+        name:
+          - python3
+          - python3-venv
+          - python3-pip
+          - nginx
+          - supervisor
+          - git
+        state: present
+
+    - name: Ensure webapps directory exists
+      file:
+        path: "{{ webapps_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Clone the project repository
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ project_path }}"
+        version: "HEAD"
+        force: yes
+
+    - name: Create Python virtualenv if it doesn't exist
+      command: python3 -m venv "{{ virtualenv_path }}"
+      args:
+        creates: "{{ virtualenv_path }}/bin/activate"
+
+    - name: Install Python requirements from requirements.txt
+      pip:
+        requirements: "{{ project_path }}/requirements.txt"
+        virtualenv: "{{ virtualenv_path }}"
+        virtualenv_python: python3
+
+    - name: Install uWSGI in the virtualenv
+      pip:
+        name: uwsgi
+        virtualenv: "{{ virtualenv_path }}"
+        virtualenv_python: python3
+
+    - name: Include uWSGI configuration setup
+      include_tasks: uwsgi_setup.yml
+
+    - name: Include Supervisor configuration setup
+      include_tasks: supervisor_setup.yml
+
+    - name: Include Nginx configuration setup
+      include_tasks: nginx_setup.yml
+
+    - name: Run Django migrations
+      command: "{{ virtualenv_path }}/bin/python manage.py migrate"
+      args:
+        chdir: "{{ project_path }}"
+
+    - name: Collect static files
+      command: "{{ virtualenv_path }}/bin/python manage.py collectstatic --noinput"
+      args:
+        chdir: "{{ project_path }}"
+
+  handlers:
+    - name: restart uwsgi
+      command: supervisorctl restart {{ project_name }}
+
+    - name: reread supervisor
+      command: supervisorctl reread
+
+    - name: update supervisor
+      command: supervisorctl update
+
+    - name: restart supervisor
+      command: supervisorctl restart {{ project_name }}
+
+    - name: reload nginx
+      service:
+        name: nginx
+        state: reloaded

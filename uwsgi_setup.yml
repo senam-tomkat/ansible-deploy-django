@@ -1,0 +1,32 @@
+---
+- name: Create uWSGI configuration file (INI format)
+  copy:
+    dest: "{{ uwsgi_ini }}"
+    content: |
+      [uwsgi]
+      chdir = {{ project_path }}
+      module = {{ project_name }}.wsgi:application
+      home = {{ virtualenv_path }}
+
+      # Process management
+      master = true
+      processes = 4
+      threads = 2
+
+      socket = {{ uwsgi_socket }}
+      protocol = {{ protocol }}
+
+      # Performance optimization
+      buffer-size = 65535
+      enable-threads = true
+      thunder-lock = true
+      lazy-apps = true
+
+      # Security
+      uid = www-data
+      gid = www-data
+
+      # Automatic reload on code change
+      touch-reload = {{ project_path }}/{{ project_name }}/wsgi.py
+  notify:
+    - restart uwsgi

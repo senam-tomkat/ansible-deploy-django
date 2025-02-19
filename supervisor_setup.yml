@@ -1,0 +1,19 @@
+---
+- name: Create Supervisor configuration for uWSGI
+  copy:
+    dest: "{{ supervisor_conf }}"
+    content: |
+      [program:{{ project_name }}]
+      command={{ virtualenv_path }}/bin/uwsgi --ini {{ uwsgi_ini }}
+      directory={{ project_path }}
+      autostart=true
+      autorestart=true
+      stopsignal=QUIT
+      user=www-data
+      environment={{ env_vars | dict2items | map('join', '=') | join(',') }}
+      stdout_logfile={{ home_dir }}/logs/{{ project_name }}_uwsgi.log
+      stderr_logfile={{ home_dir }}/logs/{{ project_name }}_uwsgi_error.log
+  notify:
+    - reread supervisor
+    - update supervisor
+    - restart supervisor

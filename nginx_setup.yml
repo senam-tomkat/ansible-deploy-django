@@ -1,0 +1,39 @@
+---
+- name: Create Nginx configuration for the project
+  copy:
+    dest: "{{ nginx_conf_path }}"
+    content: |
+      upstream {{ project_name }}_uwsgi {
+          server {{ uwsgi_socket }};
+      }
+
+      server {
+          listen 80;
+          server_name _;
+
+          location / {
+              include uwsgi_params;
+              uwsgi_pass {{ project_name }}_uwsgi;
+          }
+
+          location /static/ {
+              alias {{ project_path }}/static/;
+          }
+      }
+  notify:
+    - reload nginx
+
+- name: Enable Nginx site by creating a symlink
+  file:
+    src: "{{ nginx_conf_path }}"
+    dest: "/etc/nginx/sites-enabled/{{ project_name }}.conf"
+    state: link
+  notify:
+    - reload nginx
+
+- name: Remove default Nginx site if it exists
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify:
+    - reload nginx
